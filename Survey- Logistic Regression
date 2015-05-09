@@ -1,0 +1,149 @@
+top3box<-function(d)
+{
+  
+  d_tf<-data.frame()
+  
+  
+  cnt<-length(colnames(d))
+  
+  for(i in 1:cnt)
+  {
+    
+    a<-unique(sort(d[d[,i]<=10,i],decreasing=TRUE))
+    b<-c(a[1],a[2],a[3])
+    c<-which(d[,i] %in% b)
+    d_tf[c,i]<-1
+    d_tf[is.na(d_tf[,i]),i]<-0
+    col_name<-paste(colnames(d)[i],"_tf",sep="")
+    colnames(d_tf)[i]<-col_name
+  }
+  
+  return(d_tf)
+  
+}
+
+## Age indicator
+
+age_ind<-function(l,u,val)
+{
+  a<-as.numeric()
+  if(val>=l && val<=u)
+    a<-1
+  else 
+    a<-0
+  return(a)
+}
+
+
+##Script Start
+
+##set Working Directory
+
+setwd("C:\\Users\\Harneet\\Downloads\\Marketing Evolution")
+
+## 1 ## Read the tab delimited file and convert it into numeric data frame
+
+dat<- read.table("ME_DA_Test.txt", sep="\t",stringsAsFactors=FALSE)
+colnames(dat)<-dat[1,]
+dat<-dat[-1,]
+data<-as.data.frame(sapply(dat, as.numeric))
+
+
+## Remove the row with age=3. Since the age groups in consideration are 18 and more, I am removing the entry with age =3  
+
+data<-data[-which(data$age<18),]
+
+## 2 ## Create indicator variables for age groups
+
+age_18_24<-sapply(data$age,age_ind,u=24,l=18)
+age_25_44<-sapply(data$age,age_ind,u=44,l=25)
+age_45_64<-sapply(data$age,age_ind,u=64,l=45)
+age_65_more<-sapply(data$age,age_ind,u=150,l=65)
+
+
+
+data<-cbind(data,age_18_24,age_25_44,age_45_64,age_65_more) 
+
+## 3 ## Create Top 3 box variables
+
+nam<-grep("image+|familiarity|favorability|consideration",names(data))
+t3b<-top3box(data[,nam])
+data_tf<-cbind(data,t3b) ## data_tf has all the variables including the transforms
+
+
+## 4 ## I used both t-test and Chi Square to check the difference in means/proportions. met_t contains the result of the t-test and met_prop contains
+## the result for the Chi Square Test
+
+## Difference in means t-test
+
+data_gender<-cbind(data$gender,t3b)
+colnames(data_gender)[1]<-"gender"
+data_male<-subset(data_gender,gender==1)
+data_female<-subset(data_gender,gender==2)
+
+n<-length(colnames(data_gender))
+met_t<-data.frame()
+met_prop<-data.frame()
+
+j<-1
+q<-1
+for(i in 2:n)
+{
+  res<-t.test(data_male[,i],data_female[,i])
+  pval<-as.numeric(res[3])
+  tval<-as.numeric(res[1])
+  
+  if(pval<0.05){
+  met_t[j,1]<-colnames(data_gender)[i]
+  met_t[j,2]<-pval
+  met_t[j,3]<-tval
+  j<-j+1
+  }
+}
+
+colnames(met_t)<-c("Attribute","P-Value","T-Stat")
+
+
+
+## Difference in means proportions test
+
+
+for(i in 2:n)
+{
+  suc_m<-sum(data_male[,i])
+  suc_f<-sum(data_female[,i])
+  tr_m<-length(data_male[,i])
+  tr_f<-length(data_female[,i])
+  
+  res<-prop.test(c(suc_m,suc_f),c(tr_m,tr_f))
+  pval<-res[3]
+  Xval<-res[1]
+  
+  if(pval>0.05){
+    met_prop[q,1]<-colnames(data_gender)[i]
+    met_prop[q,2]<-pval
+    met_prop[q,3]<-Xval
+    q<-q+1
+  }
+}
+
+colnames(met_prop)<-c("Attribute","P-Value","Xstat")
+
+
+## Check the impact of age on Brand Consideration
+
+
+nam2<-grep("cons+|age_+|gender",names(data_tf))
+data_subset<-data_tf[,nam2]
+
+mylogit<-glm(consideration_tf ~ age_18_24, data = data_subset, family = "binomial")
+
+output<-summary(mylogit) ## output has the coefficients of the log of odds ratio
+
+odds_ratio<-round(exp(cbind(Estimate=coef(mylogit), confint(mylogit))), 2) ## This data frame has the odds ratio 
+
+
+
+##Script End
+
+
